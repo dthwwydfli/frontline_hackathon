@@ -22,6 +22,10 @@ config.resolver.nodeModulesPaths = [
 
 // Follow the store symlinks rather than treating each as an opaque file.
 config.resolver.unstable_enableSymlinks = true;
-config.resolver.disableHierarchicalLookup = true;
+
+// Hierarchical lookup stays ON. pnpm nests each package's own dependencies
+// under its store folder, so a package resolving its peers (expo-modules-core
+// and friends) walks up from its own directory. Disabling this breaks them.
+config.resolver.disableHierarchicalLookup = false;
 
 module.exports = config;
