@@ -1,0 +1,60 @@
+{
+  "expo": {
+    "name": "Common Thread",
+    "slug": "common-thread",
+    "scheme": "commonthread",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "org.commonthread.nearby",
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "Common Thread uses Bluetooth to find nearby participants and exchange messages when internet and Wi-Fi are unavailable.",
+        "NSBluetoothPeripheralUsageDescription": "Common Thread uses Bluetooth to make this phone discoverable to nearby participants so their messages can reach you.",
+        "UIBackgroundModes": ["bluetooth-central", "bluetooth-peripheral"]
+      }
+    },
+    "android": {
+      "package": "org.commonthread.nearby",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_ADVERTISE",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-dev-client",
+      "expo-secure-store",
+      "expo-sqlite",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26,
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35
+          },
+          "ios": {
+            "deploymentTarget": "15.1"
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "79cb9fa9-f977-40dc-a5cc-6b406d2888a0"
+      }
+    }
+  }
+}
