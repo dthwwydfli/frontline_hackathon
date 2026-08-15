@@ -24,5 +24,15 @@ export function resolveRelayUrl(): string | null {
   const host = hostUri.split(':')[0];
   if (host === undefined || host.length === 0) return null;
 
+  // Tunnel mode serves the bundle from an ngrok host, which cannot carry the
+  // relay port. Only a bare LAN address means the relay is actually reachable;
+  // anything else falls through and the radio path reports honestly instead of
+  // hanging on a socket that will never open.
+  if (!isLanAddress(host)) return null;
+
   return `ws://${host}:${RELAY_PORT}`;
+}
+
+function isLanAddress(host: string): boolean {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
 }
