@@ -20,6 +20,7 @@ import {
   type BridgeFrame,
   type DeliveryState,
 } from "./BridgeProtocol.js";
+import { randomUUID } from "../Domain/RandomId.js";
 
 export interface PhoneBridgeOptions {
   url?: string;
@@ -87,7 +88,7 @@ export class PhoneBridgeMeshTransport implements CommonThreadMeshTransport {
                 client: "common-thread-core",
                 protocol: BRIDGE_PROTOCOL_VERSION,
               },
-              crypto.randomUUID(),
+              randomUUID(),
             ),
           ),
         );
@@ -118,7 +119,7 @@ export class PhoneBridgeMeshTransport implements CommonThreadMeshTransport {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error("Phone bridge offline");
     }
-    const id = crypto.randomUUID();
+    const id = randomUUID();
     const result = this.pending.register(id);
     this.ws.send(encodeFrame(makeFrame(type, payload, id)));
     return result;

@@ -1,3 +1,4 @@
+import { randomUUID } from "@core/Domain/RandomId";
 import type { PeerID } from "@core/Domain/CommonThreadEvent";
 
 const PEER_KEY = "common-thread.peerID";
@@ -16,7 +17,7 @@ export interface LocalIdentity {
 export function loadIdentity(): LocalIdentity {
   let peerID = localStorage.getItem(PEER_KEY);
   if (!peerID) {
-    peerID = `peer-${crypto.randomUUID().slice(0, 8)}`;
+    peerID = `peer-${randomUUID().slice(0, 8)}`;
     localStorage.setItem(PEER_KEY, peerID);
   }
   return { peerID, displayName: localStorage.getItem(NAME_KEY) ?? "" };

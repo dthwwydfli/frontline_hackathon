@@ -1,4 +1,6 @@
 /** Opaque peer identity from upstream mesh. */
+
+import { randomUUID } from "./RandomId.js";
 export type PeerID = string;
 
 export const PROTOCOL_VERSION = 1;
@@ -219,5 +221,5 @@ export function compareEventOrder(
 }
 
 export function newId(): string {
-  return crypto.randomUUID();
+  return randomUUID();
 }

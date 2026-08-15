@@ -1,3 +1,9 @@
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+@import "@fontsource/inter/800.css";
+
 :root {
   /* Two colours. Everything else is one of them at an opacity, or white.
      Matches apps/native/src/theme/tokens.ts exactly — the two clients must
@@ -167,58 +173,41 @@ button {
     line-height: 1.55;
   }
 
-  .install-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-  }
-
-  .install-card {
+  .join-qr {
     background: #ffffff;
-    border-radius: 8px;
+    border-radius: 12px;
     color: var(--ink);
     display: grid;
-    gap: 6px;
-    min-width: 0;
-    padding: 12px;
+    gap: 8px;
+    padding: 16px;
     text-align: center;
-    text-decoration: none;
   }
 
-  .install-card img,
+  .join-qr img,
   .qr-placeholder {
     display: block;
     width: 100%;
     aspect-ratio: 1;
-    border-radius: 4px;
+    border-radius: 6px;
   }
 
   .qr-placeholder {
     background:
-      linear-gradient(90deg, transparent 25%, rgba(11, 31, 29, 0.08) 50%, transparent 75%),
+      linear-gradient(90deg, transparent 25%, rgba(11, 28, 48, 0.08) 50%, transparent 75%),
       #eaf1ff;
     background-size: 180% 100%;
   }
 
   .install-label {
-    font-size: 0.95rem;
+    font-size: 1.05rem;
     font-weight: 800;
   }
 
   .install-description {
     color: var(--ink-soft);
-    font-size: 0.76rem;
+    font-size: 0.74rem;
     line-height: 1.25;
-  }
-
-  @media (min-width: 1400px) {
-    .install-grid {
-      gap: 14px;
-    }
-
-    .install-card {
-      padding: 14px;
-    }
+    word-break: break-all;
   }
 
   .join-hint {

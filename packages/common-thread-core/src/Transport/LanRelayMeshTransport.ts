@@ -21,6 +21,7 @@ import {
   type DeliveryState,
   type PeerPresence,
 } from "./BridgeProtocol.js";
+import { randomUUID } from "../Domain/RandomId.js";
 
 export type MeshConnectionState = "connecting" | "online" | "offline";
 
@@ -262,7 +263,7 @@ export class LanRelayMeshTransport implements CommonThreadMeshTransport {
             peerID: this.localPeerID,
             displayName: this.displayName,
           },
-          crypto.randomUUID(),
+          randomUUID(),
         ),
       );
       this.setConnection("online");
@@ -407,7 +408,7 @@ export class LanRelayMeshTransport implements CommonThreadMeshTransport {
     event: CommonThreadEvent,
     upstreamMessageID: string,
   ): Promise<DeliveryState> {
-    const id = crypto.randomUUID();
+    const id = randomUUID();
     const result = this.pending.register(id);
     this.send(
       makeFrame(
@@ -461,7 +462,7 @@ export class LanRelayMeshTransport implements CommonThreadMeshTransport {
       return false;
     }
     try {
-      const id = crypto.randomUUID();
+      const id = randomUUID();
       const result = this.pending.register(id);
       this.send(makeFrame("can_open_private", { peerID }, id));
       const frame = await result;

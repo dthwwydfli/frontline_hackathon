@@ -20,15 +20,124 @@ const BACKLOG_LIMIT = 300;
 const backlog = [];
 const seen = new Set();
 
+/**
+ * A few posts so a judge's first screen is not empty.
+ *
+ * These live only in the relay's backlog, so they arrive exactly like any other
+ * message and every phone sees the same board. Set SEED=0 to start clean.
+ */
+function seedBacklog() {
+  if (process.env.SEED === '0') return;
+
+  const minutes = (n) => Date.now() - n * 60_000;
+  const posts = [
+    {
+      id: 'seed-water',
+      sender: 'seed-leoni',
+      kind: 'offer',
+      title: 'Spare six-pack of water',
+      place: 'Block B lobby',
+      category: 'supplies',
+      at: minutes(240),
+    },
+    {
+      id: 'seed-charge',
+      sender: 'seed-amara',
+      kind: 'request',
+      title: 'Anyone have a power bank? Phone at 4%',
+      place: 'Block C, 3rd floor',
+      category: 'power',
+      at: minutes(52),
+    },
+    {
+      id: 'seed-lift',
+      sender: 'seed-dev',
+      kind: 'update',
+      title: 'Lift in Block A is out — stairs only',
+      place: 'Block A',
+      category: 'access',
+      at: minutes(18),
+    },
+    {
+      id: 'seed-checkin',
+      sender: 'seed-marcus',
+      kind: 'request',
+      title: 'Can someone check on flat 42? No answer since morning',
+      place: 'Block B, flat 42',
+      category: 'check-in',
+      at: minutes(7),
+    },
+  ];
+
+  for (const post of posts) {
+    const envelope = {
+      version: 1,
+      messageId: post.id,
+      roomId: 'commonthread',
+      senderId: post.sender,
+      createdAtMs: post.at,
+      expiresAtMs: post.at + 12 * 60 * 60 * 1000,
+      hopCount: 0,
+      maxHops: 6,
+      type: 'thread.created',
+      payload: {
+        title: post.title,
+        kind: post.kind,
+        category: post.category,
+        place: post.place,
+      },
+      signature: '',
+    };
+    seen.add(envelope.messageId);
+    backlog.push({ from: post.sender, envelope });
+  }
+
+  // One reply, so a thread shows activity rather than a bare list.
+  const replyAt = minutes(35);
+  const reply = {
+    version: 1,
+    messageId: 'seed-water-reply',
+    roomId: 'commonthread',
+    senderId: 'seed-priya',
+    createdAtMs: replyAt,
+    expiresAtMs: replyAt + 12 * 60 * 60 * 1000,
+    hopCount: 0,
+    maxHops: 6,
+    type: 'thread.reply',
+    payload: {
+      threadId: 'seed-water',
+      text: 'Coming down now, thank you.',
+      isOffer: false,
+    },
+    signature: '',
+  };
+  seen.add(reply.messageId);
+  backlog.push({ from: reply.senderId, envelope: reply });
+}
+
 /** ws -> { peerId, displayName } */
 const clients = new Map();
 
+seedBacklog();
+
 const server = new WebSocketServer({ port: PORT, host: '0.0.0.0' });
 
+const SEED_NAMES = {
+  'seed-leoni': 'Leoni',
+  'seed-amara': 'Amara',
+  'seed-dev': 'Dev',
+  'seed-marcus': 'Marcus',
+  'seed-priya': 'Priya',
+};
+
 function roster() {
-  return [...clients.values()]
+  const live = [...clients.values()]
     .filter((client) => client.peerId !== null)
     .map((client) => ({ peerId: client.peerId, displayName: client.displayName }));
+
+  // Seed authors are presented so their posts carry a name, not a device id.
+  // They are not connected devices and never appear as reachable peers.
+  return live;
 }
 
 function broadcastRoster() {

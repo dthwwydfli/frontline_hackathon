@@ -267,6 +267,14 @@ export function useNearbyMesh(options: {
       if (peerId === deviceId) return 'You';
       const known = namesRef.current[peerId];
       if (known !== undefined && known.length > 0) return known;
+
+      // Seeded example posts carry their author in the id, so the board reads
+      // like a neighbourhood rather than a list of hashes.
+      if (peerId.startsWith('seed-')) {
+        const name = peerId.slice('seed-'.length);
+        return name.charAt(0).toUpperCase() + name.slice(1);
+      }
+
       // Never show a raw device id to a user; it reads as noise, not a person.
       return peerId.length > 0 ? `Neighbour ${peerId.slice(0, 4)}` : 'Someone nearby';
     },

@@ -19,17 +19,40 @@ const METRO_PORT = 8081;
  *
  * Override with VITE_JOIN_URL when running Metro somewhere else.
  */
-function joinUrl(): string {
-  const override = import.meta.env.VITE_JOIN_URL as string | undefined;
+function joinUrl(status: MeshStatus): string | null {
+  const override = (import.meta as { env?: Record<string, string | undefined> }).env
+    ?.VITE_JOIN_URL;
   if (override) return override;
-  return `exp://${window.location.hostname}:${METRO_PORT}`;
+
+  // The relay reports the machine's real LAN address. Prefer it over
+  // window.location, which reads "localhost" when the presenter opens the page
+  // on the laptop itself — a QR pointing at localhost sends every phone to
+  // itself and fails.
+  const fromRelay = status.joinUrl;
+  if (fromRelay) {
+    try {
+      return `exp://${new URL(fromRelay).hostname}:${METRO_PORT}`;
+    } catch {
+      // Fall through to the location-based guess.
+    }
+  }
+
+  const host = window.location.hostname;
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
+    return null;
+  }
+  return `exp://${host}:${METRO_PORT}`;
 }
 
 export function JoinPanel({ status }: { status: MeshStatus }) {
   const [qr, setQr] = useState<string | null>(null);
-  const url = joinUrl();
+  const url = joinUrl(status);
 
   useEffect(() => {
+    if (url === null) {
+      setQr(null);
+      return;
+    }
     let cancelled = false;
     void QRCode.toDataURL(url, {
       margin: 1,
@@ -61,7 +84,9 @@ export function JoinPanel({ status }: { status: MeshStatus }) {
           <span className="qr-placeholder" aria-hidden="true" />
         )}
         <span className="install-label">Scan to join</span>
-        <span className="install-description">{url}</span>
+        <span className="install-description">
+          {url ?? "Open this page on the network address, not localhost"}
+        </span>
       </div>
 
       <p className="join-hint">
