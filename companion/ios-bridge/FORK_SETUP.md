@@ -1,27 +1,39 @@
 # Private bitchat fork setup
 
-Common Thread does not vendor upstream mesh sources. Create a **private** fork, then wire `CommonThreadBridgeServer.swift`.
+## Current workspace state
 
-## Steps
+A shallow clone of upstream already lives at:
 
-1. On GitHub: Fork https://github.com/permissionlesstech/bitchat to a **private** repository you own.
-2. Clone beside or into the ignored path:
-
-```bash
-git clone git@github.com:<you>/bitchat.git companion/ios-bridge/bitchat-fork
+```text
+companion/ios-bridge/bitchat-fork/   # gitignored
 ```
 
-3. Add `CommonThreadBridgeServer.swift` (or copy from this folder) into the fork’s app target.
-4. In the fork, implement the `Hooks` using existing APIs — do not rewrite BLE:
+Common Thread bridge sources are copied into:
 
-| Hook | Upstream seam (typical) |
-|------|-------------------------|
-| `publishPublicWire` | Public send path via `BLEPublicMessageHandler` / `PublicChatModel` |
-| inbound `CT1:` | Public receive pipeline → emit bridge `public_event` |
-| `canOpenPrivate` | `NoiseSessionManager` established session check |
+```text
+bitchat-fork/bitchat/CommonThread/
+```
 
-5. Bind WebSocket to `127.0.0.1:17832` only (see `docs/PLD-05-phone-bridge.md`).
-6. For offline demos, avoid Nostr internet fallback.
-7. Retain upstream Bluetooth usage descriptions and tests; run physical demo per `docs/PHYSICAL_MESH_DEMO_RUNBOOK.md`.
+and mirrored (tracked) in this folder.
 
-`companion/ios-bridge/bitchat-fork/` is gitignored so the private fork is not pushed to this repo by accident.
+## Make it your private fork (recommended)
+
+1. On GitHub: Fork https://github.com/permissionlesstech/bitchat → **private**.
+2. Point the local clone at your fork:
+
+```bash
+cd companion/ios-bridge/bitchat-fork
+git remote rename origin upstream
+git remote add origin git@github.com:<you>/bitchat.git
+git push -u origin HEAD
+```
+
+3. Open `bitchat.xcodeproj`, set Team / `Local.xcconfig`, build to device.
+4. Confirm patches from `PATCHES.md` are present after any upstream pull; re-apply if needed.
+5. Run physical demo: `docs/PHYSICAL_MESH_DEMO_RUNBOOK.md`.
+
+## Do not
+
+- Rewrite BLE scan/advertise, TTL, fragmentation, Noise, or relay policy.
+- Bind the bridge WebSocket off loopback.
+- Embed private contact details in public `CT1:` events.

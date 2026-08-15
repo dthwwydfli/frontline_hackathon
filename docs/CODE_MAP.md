@@ -63,18 +63,24 @@ Do not rewrite these; wrap them:
 
 | Upstream path (bitchat) | Use |
 |-------------------------|-----|
-| `bitchat/Services/BLE/BLEService.swift` | Central/peripheral lifecycle |
-| `bitchat/Services/BLE/BLEPublicMessageHandler.swift` | Public mesh ingress/egress |
+| `bitchat/Services/BLE/BLEService.swift` | Central/peripheral lifecycle; `sendMessage`; `myPeerID` |
+| `bitchat/Services/BLE/BLEPublicMessageHandler.swift` | Public mesh ingress |
 | `bitchat/Services/BLE/BLEPublicMessagePolicy.swift` | Public payload policy |
 | `bitchat/Services/BLE/BLEFragmentHandler.swift` | Fragmentation |
 | `bitchat/Services/BLE/BLERouteForwardingPolicy.swift` | Relay / TTL |
+| `bitchat/Services/Transport.swift` | `sendMessage`, Noise session, `canDeliverSecurely` |
 | `bitchat/Noise/NoiseSessionManager.swift` | Encrypted private sessions |
+| `bitchat/ViewModels/ChatViewModel.swift` | `handlePublicMessage` CT1: fan-in (patched) |
+| `bitchat/App/AppRuntime.swift` | Bridge start (patched) |
+| `bitchat/CommonThread/*.swift` | Loopback WebSocket bridge + adapter |
 | `bitchat/Protocols/Packets.swift` | Packet framing |
 | `bitchat/Protocols/MeshMessageIdentity.swift` | Message identity / dedup |
-| `bitchat/App/PublicChatModel.swift` | Public send seam (if used by bridge) |
-| Public history sync / outbox services in fork | Store-and-forward after partition |
 
-Exact class names may shift slightly after fork; update this table when the private fork is pinned.
+## Companion status (2026-08-15)
+
+- Local clone: `companion/ios-bridge/bitchat-fork/` (gitignored)
+- Bridge listens on `ws://127.0.0.1:17832` when the forked app is running
+- Physical radio validation still required on three iPhones
 
 ## Assumptions
 

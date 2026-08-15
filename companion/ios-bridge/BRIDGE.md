@@ -1,39 +1,52 @@
-# Common Thread iOS Bridge
+# Common Thread ↔ bitchat bridge
 
-Thin transport companion for the hybrid architecture. **No Common Thread UI.**
+## What ships
 
-## Purpose
+| File | Role |
+|------|------|
+| `CommonThreadBridgeServer.swift` | Loopback WebSocket on `127.0.0.1:17832` (PLD-05) |
+| `CommonThreadBitchatAdapter.swift` | Hooks: `meshService.sendMessage` + Noise session check |
+| `CommonThreadBridgeController.swift` | App lifecycle singleton |
+| `bitchat-fork/` | Local clone of [permissionlesstech/bitchat](https://github.com/permissionlesstech/bitchat) (**gitignored**) |
 
-Expose bitchat’s existing public mesh and encrypted private-message APIs over a **loopback WebSocket** so `PhoneBridgeMeshTransport` in `@common-thread/core` can publish/receive `CT1:` envelopes without owning BLE.
+Live BLE still runs **only** inside the bitchat fork. Common Thread never opens Core Bluetooth.
 
-## Protocol
+## Upstream seams used (do not rewrite)
 
-See [`docs/PLD-05-phone-bridge.md`](../../docs/PLD-05-phone-bridge.md).
+| Concern | File / API |
+|---------|------------|
+| Public send | `Transport.sendMessage(_:mentions:messageID:timestamp:)` via `BLEService` |
+| Public receive | `ChatViewModel.handlePublicMessage` → filter `CT1:` |
+| Noise private ready | `getNoiseSessionState(for:)` / `canDeliverSecurely(to:)` |
+| Local identity | `meshService.myPeerID` |
+| Radio lifecycle | Existing `BLEService` / `AppRuntime` (unchanged controls) |
 
-Default: `ws://127.0.0.1:17832`.
+## Fork patches already applied in `bitchat-fork/`
 
-## Fork setup
+1. Files under `bitchat/CommonThread/` (auto-picked by Xcode synchronized root group).
+2. `AppRuntime.start()` → `CommonThreadBridgeController.shared.start(with: chatViewModel)`.
+3. `ChatViewModel.handlePublicMessage` → forwards `CT1:` payloads to the bridge.
+
+See `PATCHES.md` to re-apply if you re-clone.
+
+## Build & run (physical iPhones)
 
 ```bash
-# Create a private fork of permissionlesstech/bitchat, then:
-git clone <your-private-bitchat-fork-url> companion/ios-bridge/bitchat-fork
+cd companion/ios-bridge/bitchat-fork
+open bitchat.xcodeproj
 ```
 
-Do **not** commit upstream sources into this repo unless the fork is explicitly vendored by the team. Prefer submodule or sibling private repo.
+1. Set your Apple Team ID in `Configs/Local.xcconfig` (see upstream README).
+2. Build **bitchat (iOS)** to three devices.
+3. Keep the app **foreground**; disable cellular data and Wi‑Fi internet for the demo.
+4. From a same-device web runtime (or Mac simulator talking to a Mac companion build), connect `PhoneBridgeMeshTransport` to `ws://127.0.0.1:17832`.
 
-## Integration points (wrap, do not rewrite)
+On a physical iPhone, the web UI must run **on that phone** (WKWebView / local page) to reach loopback — a laptop browser cannot open the phone’s `127.0.0.1`.
 
-- `BLEService.swift` — radio lifecycle
-- `BLEPublicMessageHandler.swift` — public send/receive
-- `NoiseSessionManager.swift` — `can_open_private`
-- Packet TTL, fragmentation, duplicate suppression, outbox — leave upstream
+## Offline honesty
 
-## Swift stub
+CT publishes use **mesh `sendMessage` only** (no Nostr/geohash path in the adapter).
 
-`CommonThreadBridgeServer.swift` sketches the server surface. Replace `TODO` hooks with calls into the forked public/private message APIs after the fork is available.
+## Verify without radio
 
-## Demo constraints
-
-- Foreground-first
-- Keep Bluetooth usage descriptions from upstream Info.plist
-- Prefer mesh-only path (avoid Nostr internet fallback during offline demos)
+Backend still uses `InMemoryMeshTransport` (`pnpm test`). Bridge fixture: `PhoneBridgeTests.ts`.
