@@ -10,11 +10,11 @@ import { EventAuthoriser } from "../Domain/EventAuthoriser.js";
 import { ContentSafetyPolicy } from "../Domain/ContentSafetyPolicy.js";
 import { reduceThread } from "../Domain/ThreadReducer.js";
 import type { MaterialisedThread } from "../Domain/ThreadState.js";
+import type { SqliteEventStore } from "../Persistence/SqliteEventStore.js";
 import {
   recordToEvent,
-  type SqliteEventStore,
-} from "../Persistence/SqliteEventStore.js";
-import type { CommonThreadEventStore } from "../Persistence/CommonThreadEventStore.js";
+  type CommonThreadEventStore,
+} from "../Persistence/CommonThreadEventStore.js";
 import type {
   CommonThreadMeshTransport,
   ReceivedCommonThreadEvent,
@@ -39,6 +39,7 @@ export class CommonThreadService {
   readonly privateGate: PrivateContactGate;
   private ingestLoop?: Promise<void>;
   private stopped = false;
+  private readonly listeners = new Set<() => void>();
 
   constructor(
     private readonly store: CommonThreadEventStore,
@@ -49,6 +50,23 @@ export class CommonThreadService {
     this.privateGate = new PrivateContactGate(transport);
   }
 
+  /**
+   * Notified whenever stored state changed — an inbound event was ingested or
+   * a local publish landed. UIs re-materialise from here rather than polling.
+   */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private notify(): void {
+    for (const listener of this.listeners) {
+      listener();
+    }
+  }
+
   startInboundProcessing(): void {
     if (this.ingestLoop) {
       return;
@@ -57,8 +75,23 @@ export class CommonThreadService {
     this.ingestLoop = this.runInbound();
   }
 
-  stopInboundProcessing(): void {
+  /**
+   * Resolves once the inbound loop has actually exited. The loop parks on the
+   * transport's iterator, so a transport that can be closed (see
+   * `AsyncEventQueue.close`) is what lets this return without waiting for one
+   * more inbound event.
+   */
+  async stopInboundProcessing(): Promise<void> {
     this.stopped = true;
+    const loop = this.ingestLoop;
+    this.ingestLoop = undefined;
+    await Promise.race([
+      loop ?? Promise.resolve(),
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 0);
+        (timer as unknown as { unref?: () => void }).unref?.();
+      }),
+    ]);
   }
 
   private async runInbound(): Promise<void> {
@@ -66,7 +99,10 @@ export class CommonThreadService {
       if (this.stopped) {
         break;
       }
-      await this.ingestReceived(received);
+      const result = await this.ingestReceived(received);
+      if (result.accepted) {
+        this.notify();
+      }
     }
   }
 
@@ -103,6 +139,18 @@ export class CommonThreadService {
     return rows.map(recordToEvent);
   }
 
+  private async nextLocalCreatedAt(threadID?: string): Promise<string> {
+    if (!threadID) {
+      return new Date().toISOString();
+    }
+    const existing = await this.existingEventsFor(threadID);
+    const latest = existing.reduce((max, event) => {
+      const t = Date.parse(event.createdAt);
+      return Number.isFinite(t) ? Math.max(max, t) : max;
+    }, 0);
+    return new Date(Math.max(Date.now(), latest + 1)).toISOString();
+  }
+
   async materialiseThread(
     threadID: string,
   ): Promise<MaterialisedThread | null> {
@@ -122,10 +170,7 @@ export class CommonThreadService {
     const out: MaterialisedThread[] = [];
     for (const [threadID, events] of byThread) {
       const m = reduceThread(threadID, events, this.safety);
-      if (m && m.root.type !== "offer") {
-        // Prefer request/update roots as listable threads; pure offer roots optional
-        out.push(m);
-      } else if (m) {
+      if (m) {
         out.push(m);
       }
     }
@@ -200,6 +245,7 @@ export class CommonThreadService {
       receivedAt: new Date(),
       validationStatus: "valid",
     });
+    this.notify();
 
     return {
       event,
@@ -226,7 +272,7 @@ export class CommonThreadService {
       area: this.allowedArea,
       kind: "thread.created",
       authorPeerID: this.localPeerID,
-      createdAt: new Date().toISOString(),
+      createdAt: await this.nextLocalCreatedAt(input.threadID),
       body: {
         type: input.type,
         title: input.title,
@@ -247,7 +293,7 @@ export class CommonThreadService {
       area: this.allowedArea,
       kind: "thread.reply.created",
       authorPeerID: this.localPeerID,
-      createdAt: new Date().toISOString(),
+      createdAt: await this.nextLocalCreatedAt(threadID),
       body: { text },
     };
     return this.publishLocal(event);
@@ -280,8 +326,26 @@ export class CommonThreadService {
       area: this.allowedArea,
       kind: "thread.offer.accepted",
       authorPeerID: this.localPeerID,
-      createdAt: new Date().toISOString(),
+      createdAt: await this.nextLocalCreatedAt(threadID),
       body: { acceptedOfferEventID },
+    };
+    return this.publishLocal(event);
+  }
+
+  /** PLD-04 `shareGuidance` intent — an area bulletin, not part of a thread. */
+  async shareGuidance(input: {
+    title: string;
+    text: string;
+  }): Promise<PublishResult> {
+    const event: CommonThreadEvent = {
+      v: PROTOCOL_VERSION,
+      eventID: newId(),
+      threadID: newId(),
+      area: this.allowedArea,
+      kind: "guidance.shared",
+      authorPeerID: this.localPeerID,
+      createdAt: await this.nextLocalCreatedAt(),
+      body: { title: input.title, text: input.text },
     };
     return this.publishLocal(event);
   }
@@ -294,7 +358,7 @@ export class CommonThreadService {
       area: this.allowedArea,
       kind: "thread.resolved",
       authorPeerID: this.localPeerID,
-      createdAt: new Date().toISOString(),
+      createdAt: await this.nextLocalCreatedAt(threadID),
       body: note ? { note } : {},
     };
     return this.publishLocal(event);

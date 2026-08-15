@@ -8,3 +8,5 @@ companion/ios-bridge/bitchat-fork/
 .pnpm-store/
 .gstack/qa-reports/screenshots/
 .gstack/qa-reports/screenshots/
+.gstack/
+*.tsbuildinfo

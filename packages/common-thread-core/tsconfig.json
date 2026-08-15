@@ -1,6 +1,9 @@
 {
   "compilerOptions": {
     "target": "ES2022",
+    // DOM types are needed by the browser-side adapters (IndexedDbEventStore,
+    // LanRelayMeshTransport). Node-only modules ignore them.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "declaration": true,

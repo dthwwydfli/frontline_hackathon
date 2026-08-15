@@ -1,4 +1,4 @@
-import { NativeModule, requireNativeModule } from 'expo';
+import { NativeModule, requireOptionalNativeModule } from 'expo';
 
 import type {
   NativeStatus,
@@ -33,4 +33,50 @@ declare class NearbyBleModule extends NativeModule<NearbyBleEvents> {
   getStatus(): Promise<NativeStatus>;
 }
 
-export default requireNativeModule<NearbyBleModule>('NearbyBle');
+const unavailableMessage =
+  'bluetooth_unsupported: Expo Go does not include the NearbyBle native module. Use an iOS or Android development build for Bluetooth mesh.';
+
+const unavailableModule = {
+  addListener: () => ({ remove: () => {} }),
+  async requestPermissions(): Promise<PermissionResult> {
+    throw new Error(unavailableMessage);
+  },
+  async getPermissions(): Promise<PermissionResult> {
+    return { granted: false, blockedPermanently: true };
+  },
+  async start(): Promise<void> {
+    throw new Error(unavailableMessage);
+  },
+  async stop(): Promise<void> {},
+  async broadcastFrame(): Promise<void> {
+    throw new Error(unavailableMessage);
+  },
+  async sendFrameTo(): Promise<void> {
+    throw new Error(unavailableMessage);
+  },
+  async getStatus(): Promise<NativeStatus> {
+    return {
+      running: false,
+      bluetoothState: 'unsupported',
+      advertising: false,
+      scanning: false,
+      roomId: null,
+      localPeerId: null,
+      connectedPeerCount: 0,
+      maxFrameBytes: 0,
+    };
+  },
+} as unknown as NearbyBleModule;
+
+const nativeModule = requireOptionalNativeModule<NearbyBleModule>('NearbyBle');
+
+/**
+ * True only in a build that actually contains the module — a development
+ * build or a store build, never Expo Go. Callers use this to choose a
+ * transport rather than discovering the absence through a thrown error.
+ */
+export function isNearbyBleAvailable(): boolean {
+  return nativeModule !== null;
+}
+
+export default nativeModule ?? unavailableModule;

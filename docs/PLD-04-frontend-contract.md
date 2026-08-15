@@ -1,6 +1,10 @@
 # PLD-04 — Frontend Contract
 
-Handoff for a future frontend agent. Build UI against this document and the exported types from `@common-thread/core`. Do **not** call Core Bluetooth, Web Bluetooth, or invent mesh APIs.
+Handoff for a future frontend agent. Build UI against this document and the exported types from `@common-thread/core/browser`. Do **not** call Core Bluetooth, Web Bluetooth, or invent mesh APIs.
+
+Browser code imports the `./browser` entry, not the package root: the root barrel
+re-exports `SqliteEventStore` (better-sqlite3) and `PhoneBridgeMeshTransport`
+(the `ws` package), which cannot be bundled for a browser.
 
 ## Read models
 
@@ -76,6 +80,17 @@ Frontend calls `CommonThreadService` (or a thin façade). Each command builds a 
 - Show upstream delivery / outbox state only.
 - Never display “delivered to all”, “they are safe”, or “EMS contacted”.
 - If bridge disconnected: show “Phone bridge offline” — do not fake mesh progress.
+  On the LAN transport the equivalent is `Mesh offline — N queued`, read from
+  `LanRelayMeshTransport.status`.
+- Never label the LAN transport as Bluetooth. A browser cannot act as a BLE
+  peripheral; the radio is Wi-Fi.
+
+## Change notification
+
+`CommonThreadService.subscribe(listener)` fires after every accepted inbound
+ingest and every local publish. Re-materialise from `listMaterialisedThreads()`
+on that signal — do not poll, and do not keep a parallel copy of events in
+component state.
 
 ## Private chat
 

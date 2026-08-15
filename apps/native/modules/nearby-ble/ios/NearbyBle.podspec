@@ -6,7 +6,7 @@ Pod::Spec.new do |s|
   s.author         = 'Common Thread'
   s.homepage       = 'https://docs.expo.dev/modules/'
   s.platforms      = {
-    :ios => '15.1'
+    :ios => '16.4'
   }
   s.source         = { git: '' }
   s.static_framework = true

@@ -9,18 +9,22 @@ import type {
   CommonThreadMeshTransport,
   ReceivedCommonThreadEvent,
 } from "./CommonThreadMeshTransport.js";
+import { AsyncEventQueue } from "./AsyncEventQueue.js";
+import {
+  BRIDGE_PROTOCOL_VERSION,
+  PendingRequests,
+  coerceDeliveryState,
+  encodeFrame,
+  makeFrame,
+  parseFrame,
+  type BridgeFrame,
+  type DeliveryState,
+} from "./BridgeProtocol.js";
 
 export interface PhoneBridgeOptions {
   url?: string;
   /** Injected WebSocket for tests. */
   webSocketFactory?: (url: string) => WebSocket;
-}
-
-interface BridgeFrame {
-  v: number;
-  id?: string;
-  type: string;
-  payload?: Record<string, unknown>;
 }
 
 /**
@@ -31,17 +35,11 @@ export class PhoneBridgeMeshTransport implements CommonThreadMeshTransport {
   private readonly url: string;
   private readonly factory: (url: string) => WebSocket;
   private ws: WebSocket | null = null;
-  private readonly pending = new Map<
-    string,
-    {
-      resolve: (v: unknown) => void;
-      reject: (e: Error) => void;
-    }
-  >();
-  private readonly pushQueue: ReceivedCommonThreadEvent[] = [];
-  private readonly waiters: Array<
-    (v: IteratorResult<ReceivedCommonThreadEvent>) => void
-  > = [];
+  private readonly pending = new PendingRequests(
+    10_000,
+    "Phone bridge request timeout",
+  );
+  private readonly inbound = new AsyncEventQueue();
   private connectPromise: Promise<void> | null = null;
 
   readonly receivedPublicEvents: AsyncIterable<ReceivedCommonThreadEvent>;
@@ -50,58 +48,24 @@ export class PhoneBridgeMeshTransport implements CommonThreadMeshTransport {
     this.url = options.url ?? "ws://127.0.0.1:17832";
     this.factory =
       options.webSocketFactory ?? ((url: string) => new WebSocket(url));
-
-    this.receivedPublicEvents = {
-      [Symbol.asyncIterator]: () => ({
-        next: async () => {
-          if (this.pushQueue.length > 0) {
-            return { value: this.pushQueue.shift()!, done: false };
-          }
-          return new Promise<IteratorResult<ReceivedCommonThreadEvent>>(
-            (resolve) => {
-              this.waiters.push(resolve);
-            },
-          );
-        },
-      }),
-    };
-  }
-
-  private pushReceived(item: ReceivedCommonThreadEvent): void {
-    const waiter = this.waiters.shift();
-    if (waiter) {
-      waiter({ value: item, done: false });
-    } else {
-      this.pushQueue.push(item);
-    }
+    this.receivedPublicEvents = this.inbound.iterable;
   }
 
   private handleFrame(frame: BridgeFrame): void {
     if (frame.type === "public_event" && frame.payload) {
       try {
         const event = parseCommonThreadEvent(frame.payload.event);
-        const upstreamMessageID = String(frame.payload.upstreamMessageID);
-        const receivedAt = new Date(String(frame.payload.receivedAt));
-        this.pushReceived({ event, upstreamMessageID, receivedAt });
+        this.inbound.push({
+          event,
+          upstreamMessageID: String(frame.payload.upstreamMessageID),
+          receivedAt: new Date(String(frame.payload.receivedAt)),
+        });
       } catch {
         // Ignore invalid envelopes from companion.
       }
       return;
     }
-
-    if (frame.id && this.pending.has(frame.id)) {
-      const p = this.pending.get(frame.id)!;
-      this.pending.delete(frame.id);
-      if (frame.type === "error") {
-        p.reject(
-          new Error(
-            String(frame.payload?.message ?? "bridge error"),
-          ),
-        );
-      } else {
-        p.resolve(frame);
-      }
-    }
+    this.pending.settle(frame);
   }
 
   async connect(): Promise<void> {
@@ -115,21 +79,24 @@ export class PhoneBridgeMeshTransport implements CommonThreadMeshTransport {
       const ws = this.factory(this.url);
       this.ws = ws;
       ws.on("open", () => {
-        const hello: BridgeFrame = {
-          v: 1,
-          id: crypto.randomUUID(),
-          type: "hello",
-          payload: { client: "common-thread-core", protocol: 1 },
-        };
-        ws.send(JSON.stringify(hello));
+        ws.send(
+          encodeFrame(
+            makeFrame(
+              "hello",
+              {
+                client: "common-thread-core",
+                protocol: BRIDGE_PROTOCOL_VERSION,
+              },
+              crypto.randomUUID(),
+            ),
+          ),
+        );
         resolve();
       });
       ws.on("message", (data) => {
-        try {
-          const frame = JSON.parse(String(data)) as BridgeFrame;
+        const frame = parseFrame(data);
+        if (frame) {
           this.handleFrame(frame);
-        } catch {
-          // ignore malformed
         }
       });
       ws.on("error", (err) => {
@@ -144,7 +111,7 @@ export class PhoneBridgeMeshTransport implements CommonThreadMeshTransport {
   }
 
   private async request(
-    type: string,
+    type: "publish_public" | "can_open_private",
     payload: Record<string, unknown>,
   ): Promise<BridgeFrame> {
     await this.connect();
@@ -152,46 +119,23 @@ export class PhoneBridgeMeshTransport implements CommonThreadMeshTransport {
       throw new Error("Phone bridge offline");
     }
     const id = crypto.randomUUID();
-    const frame: BridgeFrame = { v: 1, id, type, payload };
-    const result = new Promise<BridgeFrame>((resolve, reject) => {
-      this.pending.set(id, {
-        resolve: (v) => resolve(v as BridgeFrame),
-        reject,
-      });
-      setTimeout(() => {
-        if (this.pending.has(id)) {
-          this.pending.delete(id);
-          reject(new Error("Phone bridge request timeout"));
-        }
-      }, 10_000);
-    });
-    this.ws.send(JSON.stringify(frame));
+    const result = this.pending.register(id);
+    this.ws.send(encodeFrame(makeFrame(type, payload, id)));
     return result;
   }
 
   async publishPublicEvent(event: CommonThreadEvent): Promise<{
     upstreamMessageID: string;
-    state: "queued" | "sent" | "failed" | "unknown";
+    state: DeliveryState;
   }> {
     const wire = encodeWirePayload(event);
     const frame = await this.request("publish_public", { event, wire });
     if (frame.type !== "delivery_state" || !frame.payload) {
       return { upstreamMessageID: "", state: "unknown" };
     }
-    const state = String(frame.payload.state) as
-      | "queued"
-      | "sent"
-      | "failed"
-      | "unknown";
     return {
       upstreamMessageID: String(frame.payload.upstreamMessageID ?? ""),
-      state:
-        state === "queued" ||
-        state === "sent" ||
-        state === "failed" ||
-        state === "unknown"
-          ? state
-          : "unknown",
+      state: coerceDeliveryState(frame.payload.state),
     };
   }
 
@@ -204,6 +148,8 @@ export class PhoneBridgeMeshTransport implements CommonThreadMeshTransport {
   }
 
   async close(): Promise<void> {
+    this.pending.rejectAll(new Error("Phone bridge closed"));
+    this.inbound.close();
     this.ws?.close();
     this.ws = null;
     this.connectPromise = null;

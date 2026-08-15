@@ -1,4 +1,4 @@
-export { default as NearbyBle } from './src/NearbyBleModule';
+export { default as NearbyBle, isNearbyBleAvailable } from './src/NearbyBleModule';
 export * from './src/NearbyBle.types';
 
 /**

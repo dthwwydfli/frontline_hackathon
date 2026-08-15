@@ -1,6 +1,7 @@
 import {
   DEFAULT_AREA,
   PROTOCOL_VERSION,
+  compareEventOrder,
   parseCommonThreadEvent,
   type CommonThreadEvent,
   type ThreadCreatedBody,
@@ -69,7 +70,14 @@ export class EventAuthoriser {
     const existing = context.existingThreadEvents.filter(
       (e) => e.threadID === parsed.threadID,
     );
-    const root = existing.find((e) => e.kind === "thread.created");
+    // The root is the *earliest* thread.created, matching `reduceThread`.
+    // Never the first element of the array: a store is free to return rows in
+    // any order (IndexedDB returns them by key, not by insertion), and picking
+    // positionally would treat a later offer as the root and reject the real
+    // creator's accept/resolve.
+    const root = existing
+      .filter((e) => e.kind === "thread.created")
+      .sort(compareEventOrder)[0];
 
     switch (parsed.kind) {
       case "thread.created": {

@@ -9,6 +9,9 @@ import Foundation
 /// apart on validation, dedup or hop limits.
 public class NearbyBleModule: Module, BleMeshServiceDelegate {
   private var service: BleMeshService?
+  private var permissionCentralManager: CBCentralManager?
+  private var permissionPeripheralManager: CBPeripheralManager?
+  private var permissionPromise: Promise?
 
   /// Stable for the lifetime of the install. Persisted identity lives in JS
   /// (SecureStore); this is the radio-level handle only.
@@ -27,16 +30,24 @@ public class NearbyBleModule: Module, BleMeshServiceDelegate {
       ]
     }
 
-    AsyncFunction("requestPermissions") { () -> [String: Any] in
-      // iOS has no explicit request call. The prompt fires the first time a
-      // CBCentralManager or CBPeripheralManager is instantiated, which start()
-      // does. Report current state so the UI can explain the next step
-      // honestly instead of implying a prompt it cannot trigger.
+    AsyncFunction("requestPermissions") { (promise: Promise) in
       let status = CBManager.authorization
-      return [
-        "granted": status == .allowedAlways,
-        "blockedPermanently": status == .denied || status == .restricted,
-      ]
+      if status != .notDetermined {
+        promise.resolve(self.permissionResult(for: status))
+        return
+      }
+
+      self.permissionPromise = promise
+      self.permissionCentralManager = CBCentralManager(
+        delegate: self,
+        queue: nil,
+        options: [CBCentralManagerOptionShowPowerAlertKey: true]
+      )
+      self.permissionPeripheralManager = CBPeripheralManager(
+        delegate: self,
+        queue: nil,
+        options: [CBPeripheralManagerOptionShowPowerAlertKey: true]
+      )
     }
 
     AsyncFunction("start") { (roomId: String, displayName: String, promise: Promise) in
@@ -116,7 +127,29 @@ public class NearbyBleModule: Module, BleMeshServiceDelegate {
     OnDestroy {
       self.service?.stop {}
       self.service = nil
+      self.permissionPromise = nil
+      self.permissionCentralManager = nil
+      self.permissionPeripheralManager = nil
     }
+  }
+
+  private func permissionResult(for status: CBManagerAuthorization) -> [String: Any] {
+    [
+      "granted": status == .allowedAlways,
+      "blockedPermanently": status == .denied || status == .restricted,
+    ]
+  }
+
+  private func resolvePendingPermissionRequestIfPossible() {
+    let status = CBManager.authorization
+    guard status != .notDetermined, let promise = permissionPromise else {
+      return
+    }
+
+    promise.resolve(permissionResult(for: status))
+    permissionPromise = nil
+    permissionCentralManager = nil
+    permissionPeripheralManager = nil
   }
 
   // MARK: - BleMeshServiceDelegate
@@ -143,5 +176,17 @@ public class NearbyBleModule: Module, BleMeshServiceDelegate {
 
   func bleMesh(didChangeState state: String) {
     sendEvent("onStateChanged", ["state": state])
+  }
+}
+
+// MARK: - CoreBluetooth permission prompt
+
+extension NearbyBleModule: CBCentralManagerDelegate, CBPeripheralManagerDelegate {
+  public func centralManagerDidUpdateState(_ central: CBCentralManager) {
+    resolvePendingPermissionRequestIfPossible()
+  }
+
+  public func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
+    resolvePendingPermissionRequestIfPossible()
   }
 }

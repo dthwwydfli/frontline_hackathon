@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Crypto from 'expo-crypto';
 import * as SQLite from 'expo-sqlite';
 
+import { isNearbyBleAvailable } from '../../modules/nearby-ble';
 import { toHex } from '../crypto/bytes';
 import { EventStore } from '../db/EventStore';
 import {
@@ -22,6 +23,8 @@ import {
   type ThreadState,
 } from '../domain/ThreadReducer';
 import { BleNearbyMeshTransport } from '../mesh/BleNearbyMeshTransport';
+import { LanNearbyMeshTransport } from '../mesh/LanNearbyMeshTransport';
+import { resolveRelayUrl } from '../mesh/relayUrl';
 import { createEnvelope, type RoomSecret } from '../mesh/EnvelopeCodec';
 import type {
   MeshEnvelope,
@@ -29,7 +32,11 @@ import type {
   MeshStatus,
   PeerPresence,
 } from '../mesh/MeshEnvelope';
-import { TransportUnavailableError, type TransportBlocker } from '../mesh/NearbyMeshTransport';
+import {
+  TransportUnavailableError,
+  type NearbyMeshTransport,
+  type TransportBlocker,
+} from '../mesh/NearbyMeshTransport';
 import { OutboxSender, type DeliveryState } from '../mesh/OutboxSender';
 
 const DEFAULT_TTL_MS = 12 * 60 * 60 * 1000;
@@ -53,9 +60,16 @@ const RECOVERY: Record<TransportBlocker | 'unknown', string> = {
   unknown: 'Tap Retry. If it keeps failing, restart the app.',
 };
 
+/**
+ * Which pipe is carrying messages. The UI must name this accurately — calling
+ * a Wi-Fi relay "Bluetooth" would be the one lie this product cannot afford.
+ */
+export type MeshLink = 'bluetooth' | 'wifi';
+
 export type NearbyMeshState = {
   threads: Thread[];
   peers: PeerPresence[];
+  link: MeshLink;
   status: MeshStatus | null;
   /** messageId -> delivery state, for locally created posts only. */
   delivery: Record<string, DeliveryState>;
@@ -69,6 +83,8 @@ export type NearbyMeshApi = NearbyMeshState & {
   stop: () => Promise<void>;
   post: (type: MeshEventType, payload: Record<string, unknown>) => Promise<void>;
   refreshStatus: () => Promise<void>;
+  /** Best known name for a peer id. Never throws, always returns something. */
+  nameFor: (peerId: string) => string;
 };
 
 export function useNearbyMesh(options: {
@@ -86,11 +102,17 @@ export function useNearbyMesh(options: {
   const [error, setError] = useState<MeshError | null>(null);
   const [starting, setStarting] = useState(false);
   const [running, setRunning] = useState(false);
+  const [link, setLink] = useState<MeshLink>('bluetooth');
 
   const storeRef = useRef<EventStore | null>(null);
-  const transportRef = useRef<BleNearbyMeshTransport | null>(null);
+  const transportRef = useRef<NearbyMeshTransport | null>(null);
   const senderRef = useRef<OutboxSender | null>(null);
   const stateRef = useRef<ThreadState>(emptyState());
+
+  // Presence only carries a name while a peer is connected, but their posts
+  // outlive the connection. Names learned once are kept so an old request does
+  // not silently lose its author.
+  const namesRef = useRef<Record<string, string>>({});
 
   const republish = useCallback(() => {
     setThreads(listThreads(stateRef.current));
@@ -123,25 +145,47 @@ export function useNearbyMesh(options: {
       stateRef.current = state;
       republish();
 
-      const transport = new BleNearbyMeshTransport({
-        displayName,
-        secret,
-        persist: async (envelope, fromPeerId) => {
-          await store.recordEvent(envelope, {
-            receivedFrom: fromPeerId,
-            receivedAtMs: Date.now(),
-            isLocal: false,
+      const persist = async (envelope: MeshEnvelope, fromPeerId: string) => {
+        await store.recordEvent(envelope, {
+          receivedFrom: fromPeerId,
+          receivedAtMs: Date.now(),
+          isLocal: false,
+        });
+      };
+      const hasSeen = (messageId: string) => store.hasSeen(messageId);
+
+      // The radio is the real transport. Expo Go cannot load it — its native
+      // half is fixed when Expo builds it — so there we fall back to a relay
+      // on the same Wi-Fi. Everything above this line is identical either way:
+      // same envelopes, same signatures, same reducer, same store.
+      const relayUrl = resolveRelayUrl();
+      const useRadio = isNearbyBleAvailable() || relayUrl === null;
+
+      const transport: NearbyMeshTransport = useRadio
+        ? new BleNearbyMeshTransport({ displayName, secret, persist, hasSeen })
+        : new LanNearbyMeshTransport({
+            url: relayUrl,
+            peerId: deviceId,
+            displayName,
+            persist,
+            hasSeen,
           });
-        },
-        hasSeen: (messageId) => store.hasSeen(messageId),
-      });
+
+      setLink(useRadio ? 'bluetooth' : 'wifi');
 
       transport.onEnvelope((envelope) => {
         applyEnvelope(stateRef.current, envelope);
         republish();
       });
 
-      transport.onPeerChange(setPeers);
+      transport.onPeerChange((next) => {
+        for (const peer of next) {
+          if (peer.displayName !== null && peer.displayName.length > 0) {
+            namesRef.current[peer.peerId] = peer.displayName;
+          }
+        }
+        setPeers(next);
+      });
 
       const sender = new OutboxSender({ store, transport, roomId });
       sender.onDeliveryChange((messageId, state) => {
@@ -218,6 +262,23 @@ export function useNearbyMesh(options: {
     setStatus(await transport.getStatus());
   }, []);
 
+  const nameFor = useCallback(
+    (peerId: string) => {
+      if (peerId === deviceId) return 'You';
+      const known = namesRef.current[peerId];
+      if (known !== undefined && known.length > 0) return known;
+      // Never show a raw device id to a user; it reads as noise, not a person.
+      return peerId.length > 0 ? `Neighbour ${peerId.slice(0, 4)}` : 'Someone nearby';
+    },
+    [deviceId],
+  );
+
+  // Start once the session exists. Nothing about this screen should be gated
+  // behind a button the user has no reason to understand.
+  useEffect(() => {
+    void start();
+  }, [start]);
+
   useEffect(() => {
     return () => {
       senderRef.current?.stop();
@@ -229,6 +290,7 @@ export function useNearbyMesh(options: {
     () => ({
       threads,
       peers,
+      link,
       status,
       delivery,
       error,
@@ -238,10 +300,13 @@ export function useNearbyMesh(options: {
       stop,
       post,
       refreshStatus,
+      nameFor,
     }),
     [
       delivery,
       error,
+      link,
+      nameFor,
       peers,
       post,
       refreshStatus,
