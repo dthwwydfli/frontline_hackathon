@@ -1,24 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { SqliteEventStore } from "../src/Persistence/SqliteEventStore.js";
-import { InMemoryMeshHub } from "../src/Transport/InMemoryMeshTransport.js";
+import {
+  InMemoryMeshHub,
+  InMemoryMeshTransport,
+} from "../src/Transport/InMemoryMeshTransport.js";
 import { CommonThreadService } from "../src/Services/CommonThreadService.js";
 
-async function drainOnce(
+async function drainAll(
   service: CommonThreadService,
-  transport: { receivedPublicEvents: AsyncIterable<unknown> },
-): Promise<void> {
-  const iter = transport.receivedPublicEvents[Symbol.asyncIterator]();
-  const next = await Promise.race([
-    iter.next(),
-    new Promise<{ done: true; value: undefined }>((resolve) =>
-      setTimeout(() => resolve({ done: true, value: undefined }), 50),
-    ),
-  ]);
-  if (!next.done && next.value) {
-    await service.ingestReceived(
-      next.value as Parameters<CommonThreadService["ingestReceived"]>[0],
-    );
+  transport: InMemoryMeshTransport,
+): Promise<number> {
+  const pending = transport.drainPending();
+  for (const item of pending) {
+    await service.ingestReceived(item);
   }
+  return pending.length;
 }
 
 describe("three-node mesh simulation", () => {
@@ -46,16 +42,16 @@ describe("three-node mesh simulation", () => {
     expect(created.accepted).toBe(true);
     const threadID = created.event.threadID;
 
-    // B and C receive relay
-    await drainOnce(serviceB, transportB);
-    await drainOnce(serviceC, transportC);
+    expect(await drainAll(serviceB, transportB)).toBeGreaterThan(0);
+    expect(await drainAll(serviceC, transportC)).toBeGreaterThan(0);
 
     // Duplicate relay of same upstream id must not double-apply
-    await serviceC.ingestReceived({
+    const dup = await serviceC.ingestReceived({
       event: created.event,
       upstreamMessageID: created.upstreamMessageID,
       receivedAt: new Date(),
     });
+    expect(dup.duplicate).toBe(true);
 
     const offer = await serviceC.postOffer(threadID, {
       title: "Have a torch",
@@ -65,14 +61,14 @@ describe("three-node mesh simulation", () => {
     });
     expect(offer.accepted).toBe(true);
 
-    await drainOnce(serviceA, transportA);
-    await drainOnce(serviceB, transportB);
+    expect(await drainAll(serviceA, transportA)).toBeGreaterThan(0);
+    expect(await drainAll(serviceB, transportB)).toBeGreaterThan(0);
 
     const accept = await serviceA.acceptOffer(threadID, offer.event.eventID);
     expect(accept.accepted).toBe(true);
 
-    await drainOnce(serviceB, transportB);
-    await drainOnce(serviceC, transportC);
+    expect(await drainAll(serviceB, transportB)).toBeGreaterThan(0);
+    expect(await drainAll(serviceC, transportC)).toBeGreaterThan(0);
 
     const matA = await serviceA.materialiseThread(threadID);
     const matB = await serviceB.materialiseThread(threadID);
@@ -83,7 +79,6 @@ describe("three-node mesh simulation", () => {
     expect(matC?.status).toBe("Matched");
     expect(matA?.acceptedOfferEventID).toBe(offer.event.eventID);
 
-    // Exactly one root event id in each store
     const rowsA = await storeA.listValidByThreadID(threadID);
     const roots = rowsA.filter((r) => r.kind === "thread.created");
     const requestRoots = roots.filter((r) =>

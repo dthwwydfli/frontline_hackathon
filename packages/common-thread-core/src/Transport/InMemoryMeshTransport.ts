@@ -12,6 +12,7 @@ import type {
 interface NodeMailbox {
   peerID: PeerID;
   push: (item: ReceivedCommonThreadEvent) => void;
+  drainPending: () => ReceivedCommonThreadEvent[];
   privateReady: Set<PeerID>;
 }
 
@@ -38,9 +39,15 @@ export class InMemoryMeshHub {
       }
     };
 
+    const drainPending = (): ReceivedCommonThreadEvent[] => {
+      const items = queue.splice(0, queue.length);
+      return items;
+    };
+
     this.nodes.set(peerID, {
       peerID,
       push,
+      drainPending,
       privateReady: new Set(),
     });
 
@@ -59,7 +66,12 @@ export class InMemoryMeshHub {
       }),
     };
 
-    return new InMemoryMeshTransport(this, peerID, receivedPublicEvents);
+    return new InMemoryMeshTransport(
+      this,
+      peerID,
+      receivedPublicEvents,
+      drainPending,
+    );
   }
 
   setPrivateReady(a: PeerID, b: PeerID, ready: boolean): void {
@@ -106,7 +118,13 @@ export class InMemoryMeshTransport implements CommonThreadMeshTransport {
     private readonly hub: InMemoryMeshHub,
     readonly localPeerID: PeerID,
     readonly receivedPublicEvents: AsyncIterable<ReceivedCommonThreadEvent>,
+    private readonly drainPendingFn: () => ReceivedCommonThreadEvent[],
   ) {}
+
+  /** Non-blocking: take all queued inbound events without parking waiters. */
+  drainPending(): ReceivedCommonThreadEvent[] {
+    return this.drainPendingFn();
+  }
 
   async publishPublicEvent(event: CommonThreadEvent): Promise<{
     upstreamMessageID: string;
