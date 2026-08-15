@@ -4,8 +4,7 @@ Offline mutual-aid backend for local communities during power cuts and distress 
 
 ## Architecture
 
-TypeScript domain core + iPhone BLE mesh companion (fork of [bitchat](https://github.com/permissionlesstech/bitchat)). Browsers do not own Bluetooth.
-
+TypeScript domain core + iPhone BLE mesh companion 
 See `docs/PLD-02-architecture.md`.
 
 Two radios, one domain. The web app runs the same core over a local-network
