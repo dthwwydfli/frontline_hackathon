@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://common-thread.local/schemas/common-thread-event.json",
+  "title": "CommonThreadEvent",
+  "type": "object",
+  "required": [
+    "v",
+    "eventID",
+    "threadID",
+    "area",
+    "kind",
+    "authorPeerID",
+    "createdAt",
+    "body"
+  ],
+  "properties": {
+    "v": { "type": "integer", "const": 1 },
+    "eventID": { "type": "string", "format": "uuid" },
+    "threadID": { "type": "string", "format": "uuid" },
+    "area": { "type": "string", "const": "riverside-estate" },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "thread.created",
+        "thread.reply.created",
+        "thread.offer.accepted",
+        "thread.resolved",
+        "guidance.shared"
+      ]
+    },
+    "authorPeerID": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "body": { "type": "object" }
+  },
+  "additionalProperties": false
+}

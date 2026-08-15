@@ -1,0 +1,10 @@
+{
+  "name": "frontline-hackathon",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @common-thread/web dev",
+    "test": "pnpm --filter @common-thread/core test",
+    "build": "pnpm --filter @common-thread/core build && pnpm --filter @common-thread/web build"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

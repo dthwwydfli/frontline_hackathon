@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.sqlite
+.DS_Store
+companion/ios-bridge/bitchat-fork/
+*.log
+.turbo
+.pnpm-store/
+.gstack/qa-reports/screenshots/
