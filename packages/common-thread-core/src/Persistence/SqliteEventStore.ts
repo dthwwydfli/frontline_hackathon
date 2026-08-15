@@ -1,9 +1,5 @@
 import Database from "better-sqlite3";
-import {
-  encodeCommonThreadEvent,
-  parseCommonThreadEvent,
-  type CommonThreadEvent,
-} from "../Domain/CommonThreadEvent.js";
+import { encodeCommonThreadEvent } from "../Domain/CommonThreadEvent.js";
 import type {
   CommonThreadEventStore,
   IngestInput,
@@ -186,6 +182,6 @@ export class SqliteEventStore implements CommonThreadEventStore {
   }
 }
 
-export function recordToEvent(record: StoredEventRecord): CommonThreadEvent {
-  return parseCommonThreadEvent(JSON.parse(record.canonicalEventJson));
-}
+// Re-exported for existing importers; the implementation now lives beside the
+// store interface so it stays importable from a browser.
+export { recordToEvent } from "./CommonThreadEventStore.js";

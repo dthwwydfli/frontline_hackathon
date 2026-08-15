@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
     }
   },
   "scripts": {
@@ -24,6 +28,7 @@
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.13.4",
     "@types/ws": "^8.5.14",
+    "fake-indexeddb": "^6.2.5",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
   }

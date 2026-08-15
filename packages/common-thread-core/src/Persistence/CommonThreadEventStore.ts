@@ -1,4 +1,7 @@
-import type { CommonThreadEvent } from "../Domain/CommonThreadEvent.js";
+import {
+  parseCommonThreadEvent,
+  type CommonThreadEvent,
+} from "../Domain/CommonThreadEvent.js";
 
 export type ValidationStatus = "valid" | "rejected";
 
@@ -41,4 +44,12 @@ export interface CommonThreadEventStore {
   listAllValid(): Promise<StoredEventRecord[]>;
   pruneRejected(olderThan: Date): Promise<number>;
   close(): Promise<void>;
+}
+
+/**
+ * Rehydrate a stored row into its event. Lives here rather than beside a
+ * concrete store so browser code can use it without importing better-sqlite3.
+ */
+export function recordToEvent(record: StoredEventRecord): CommonThreadEvent {
+  return parseCommonThreadEvent(JSON.parse(record.canonicalEventJson));
 }

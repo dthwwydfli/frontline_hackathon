@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android", "web"],
+  "apple": {
+    "modules": ["NearbyBleModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.nearbyble.NearbyBleModule"]
+  }
+}

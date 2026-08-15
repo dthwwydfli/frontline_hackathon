@@ -2,8 +2,14 @@
   "name": "frontline-hackathon",
   "private": true,
   "scripts": {
-    "dev": "pnpm --filter @common-thread/web dev",
-    "test": "pnpm --filter @common-thread/core test",
+    "dev": "pnpm --filter @common-thread/core build && pnpm --filter @common-thread/web dev",
+    "demo": "pnpm build && pnpm --filter @common-thread/web preview",
+    "test": "pnpm --filter @common-thread/core test && pnpm --filter @common-thread/native test",
+    "test:core": "pnpm --filter @common-thread/core test",
+    "test:native": "pnpm --filter @common-thread/native test",
+    "native:prebuild": "pnpm --filter @common-thread/native exec expo prebuild --clean",
+    "native:ios": "pnpm --filter @common-thread/native exec expo run:ios --device",
+    "native:android": "pnpm --filter @common-thread/native exec expo run:android --device",
     "build": "pnpm --filter @common-thread/core build && pnpm --filter @common-thread/web build"
   },
   "packageManager": "pnpm@9.15.0"

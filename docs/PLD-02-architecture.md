@@ -19,6 +19,36 @@
          Other iPhones
 ```
 
+## Second topology: local-network relay (web demo)
+
+```
+┌─────────────────────────────┐   ┌─────────────────────────────┐
+│  Browser (phone or laptop)  │   │  Browser (another device)   │
+│  UI → core → IndexedDB      │   │  UI → core → IndexedDB      │
+└──────────────┬──────────────┘   └──────────────┬──────────────┘
+               │ LanRelayMeshTransport            │
+               │ ws://<laptop-lan-ip>/ct-mesh     │
+               └───────────────┬──────────────────┘
+                       ┌───────▼────────┐
+                       │  RelayHub      │  fan-out, dedupe,
+                       │  (Vite plugin) │  store-and-forward
+                       └────────────────┘
+```
+
+Used when there is no built companion. Runs on a laptop hotspot with **no
+internet uplink**, which is why it does not contradict the "no cloud sync, no
+public WebSocket servers" non-goal — nothing leaves the local network, and the
+hub is a transport, never a second database.
+
+**It is not Bluetooth.** A browser cannot advertise as a BLE peripheral, so two
+browsers can never discover each other over BLE. Web UI must not claim otherwise.
+See `WEB_DEMO_RUNBOOK.md`.
+
+Both topologies speak the same PLD-05 frames, so `CommonThreadMeshTransport` has
+three implementations: `InMemoryMeshTransport` (tests),
+`LanRelayMeshTransport` (web demo), `PhoneBridgeMeshTransport` (BLE via
+companion).
+
 ## Trust boundaries
 
 1. **Domain trust:** `EventAuthoriser` + `ContentSafetyPolicy` decide what enters materialised state. Rejected events are stored for diagnostics only.
@@ -32,7 +62,7 @@
 |--------------|----------------|
 | `Domain/` | Events, reducer, authoriser, content safety — pure, no BLE |
 | `Persistence/` | Append-only store, idempotent ingest |
-| `Transport/` | Adapter interface + phone bridge + in-memory test mesh |
+| `Transport/` | Adapter interface + shared PLD-05 protocol + phone bridge + LAN relay + in-memory test mesh |
 | `Services/` | Orchestration: publish, ingest, materialise, private gate |
 
 ## Ordering model
