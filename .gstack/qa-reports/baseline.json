@@ -1,0 +1,29 @@
+{
+  "date": "2026-08-15",
+  "url": "backend://common-thread-core",
+  "healthScore": 100,
+  "issues": [
+    {
+      "id": "ISSUE-001",
+      "title": "Flaky three-node mesh drain left status Open",
+      "severity": "high",
+      "category": "functional",
+      "status": "verified_fixed",
+      "commit": "a2103b1"
+    }
+  ],
+  "categoryScores": {
+    "console": 100,
+    "links": 100,
+    "visual": 100,
+    "functional": 100,
+    "ux": 100,
+    "performance": 100,
+    "content": 100,
+    "accessibility": 100
+  },
+  "notes": {
+    "ble": "deferred_not_wired",
+    "tests": "19/19 x3"
+  }
+}
