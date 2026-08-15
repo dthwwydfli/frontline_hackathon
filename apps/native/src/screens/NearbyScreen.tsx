@@ -1,43 +1,57 @@
 /**
- * The feed: who is nearby, what has been asked, and the composer.
+ * The feed: area title, mesh status, the three compose actions, and what has
+ * been posted. Laid out to match apps/web so the two clients read as one
+ * product.
  *
- * Every claim here is one the transport can actually observe. There is no
- * "delivered" and no safety advice.
+ * Every claim here is one the transport can actually observe.
  */
 
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 
-import type { Thread } from '../domain/ThreadReducer';
+import type { Thread, ThreadKind } from '../domain/ThreadReducer';
 import type { NearbyMeshApi } from '../hooks/useNearbyMesh';
 import { color, radius, space } from '../theme/tokens';
-import {
-  AppText,
-  Button,
-  Card,
-  EmptyState,
-  Pill,
-  Screen,
-  Segmented,
-} from '../ui/kit';
+import { AppText, Button, Card, EmptyState, Screen, Segmented } from '../ui/kit';
 import { Composer } from './Composer';
-import { MeshHeader } from './MeshHeader';
+import { MeshPill } from './MeshHeader';
 
-type Filter = 'all' | 'open' | 'matched' | 'resolved';
+type Filter = 'all' | 'request' | 'offer';
 
 const FILTERS = [
   { value: 'all' as const, label: 'All' },
-  { value: 'open' as const, label: 'Open' },
-  { value: 'matched' as const, label: 'Matched' },
-  { value: 'resolved' as const, label: 'Done' },
+  { value: 'request' as const, label: 'Requests' },
+  { value: 'offer' as const, label: 'Offers' },
 ];
 
-export const STATUS_LABEL: Record<Thread['status'], string> = {
-  open: 'Open',
-  matched: 'Offer accepted',
-  resolved: 'Resolved',
+const KIND_LABEL: Record<ThreadKind, string> = {
+  request: 'Request',
+  offer: 'Offer',
+  update: 'Update',
 };
+
+/**
+ * Status wording depends on what was posted — an offer that nobody has taken
+ * is "Available", not "Open". Mirrors displayStatus() in apps/web.
+ */
+export function displayStatus(thread: Thread): string {
+  if (thread.kind === 'offer') {
+    return thread.status === 'open'
+      ? 'Available'
+      : thread.status === 'resolved'
+        ? 'Closed'
+        : 'Matched';
+  }
+  if (thread.kind === 'update') {
+    return thread.status === 'open' ? 'Current' : 'Resolved';
+  }
+  return thread.status === 'open'
+    ? 'Open'
+    : thread.status === 'matched'
+      ? 'Matched'
+      : 'Resolved';
+}
 
 export function NearbyScreen({
   mesh,
@@ -51,54 +65,49 @@ export function NearbyScreen({
   bottomInset: number;
 }) {
   const [filter, setFilter] = useState<Filter>('all');
-  const [composing, setComposing] = useState(false);
+  const [composing, setComposing] = useState<ThreadKind | null>(null);
 
   const visible = useMemo(
-    () => (filter === 'all' ? mesh.threads : mesh.threads.filter((t) => t.status === filter)),
+    () => (filter === 'all' ? mesh.threads : mesh.threads.filter((t) => t.kind === filter)),
     [filter, mesh.threads],
   );
 
   return (
     <>
       <Screen bottomInset={bottomInset}>
-        <MeshHeader mesh={mesh} />
-
-        {mesh.peers.length > 0 && (
-          <View style={{ gap: space.sm }}>
-            <AppText variant="label" tone="soft">
-              In range
-            </AppText>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.peerRow}
-            >
-              {mesh.peers.map((peer) => (
-                <View key={peer.peerId} style={styles.peer}>
-                  <View style={styles.avatar}>
-                    <AppText variant="bodyStrong" tone="accent">
-                      {initial(peer.displayName ?? nameFor(peer.peerId))}
-                    </AppText>
-                  </View>
-                  <AppText variant="caption" tone="soft" numberOfLines={1}>
-                    {peer.displayName ?? nameFor(peer.peerId)}
-                  </AppText>
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        )}
+        <View style={styles.header}>
+          <AppText variant="title" accessibilityRole="header">
+            Riverside Estate
+          </AppText>
+          <MeshPill mesh={mesh} />
+        </View>
 
         <Segmented options={FILTERS} value={filter} onChange={setFilter} />
+
+        <View style={styles.actions}>
+          <Action label="Ask" icon="campaign" onPress={() => setComposing('request')} />
+          <Action label="Offer" icon="add" onPress={() => setComposing('offer')} />
+          <Action label="Update" icon="notifications-none" onPress={() => setComposing('update')} />
+        </View>
+
+        {mesh.error !== null && (
+          <Card>
+            <AppText variant="bodyStrong">Not connected</AppText>
+            <AppText variant="body" tone="soft">
+              {mesh.error.recovery}
+            </AppText>
+            <Button label="Retry" variant="secondary" onPress={() => void mesh.start()} />
+          </Card>
+        )}
 
         {visible.length === 0 ? (
           <EmptyState
             icon="waving-hand"
-            title={filter === 'all' ? 'Nothing nearby yet' : 'Nothing here'}
+            title="Nothing nearby yet"
             body={
               filter === 'all'
-                ? 'Post the first request and anyone in Bluetooth range will see it.'
-                : 'Try a different filter.'
+                ? 'Post the first request or offer and everyone nearby will see it.'
+                : 'Nothing of this kind yet.'
             }
           />
         ) : (
@@ -115,29 +124,30 @@ export function NearbyScreen({
         )}
       </Screen>
 
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Post a request"
-        onPress={() => setComposing(true)}
-        style={({ pressed }) => [
-          styles.fab,
-          { bottom: bottomInset + space.lg },
-          pressed && { opacity: 0.85 },
-        ]}
-      >
-        <MaterialIcons name="add" size={26} color={color.onAccent} />
-      </Pressable>
-
       <Composer
-        visible={composing}
-        onClose={() => setComposing(false)}
+        kind={composing}
+        onClose={() => setComposing(null)}
         onPost={async (payload) => {
           await mesh.post('thread.created', payload);
-          setComposing(false);
+          setComposing(null);
         }}
         canPost={mesh.running}
       />
     </>
+  );
+}
+
+function Action({
+  label,
+  icon,
+  onPress,
+}: {
+  label: string;
+  icon: keyof typeof MaterialIcons.glyphMap;
+  onPress: () => void;
+}) {
+  return (
+    <Button label={label} icon={icon} variant="secondary" onPress={onPress} style={styles.action} />
   );
 }
 
@@ -152,40 +162,44 @@ export function ThreadCard({
   onPress?: () => void;
   footer?: string;
 }) {
-  const activity = thread.offers.length + thread.replies.length;
+  const replies = thread.replies.length + thread.offers.length;
 
   return (
     <Card onPress={onPress}>
-      <View style={styles.cardHead}>
-        <Pill label={STATUS_LABEL[thread.status]} strong={thread.status === 'matched'} />
-        {thread.category !== null && (
-          <AppText variant="caption" tone="faint">
-            {thread.category}
+      <View style={styles.topline}>
+        <View style={styles.kind}>
+          <AppText variant="caption" tone="accent">
+            {KIND_LABEL[thread.kind]}
           </AppText>
-        )}
+        </View>
+        <View style={styles.status}>
+          <MaterialIcons name="check" size={13} color={color.inkSoft} />
+          <AppText variant="caption" tone="soft">
+            {displayStatus(thread)}
+          </AppText>
+        </View>
       </View>
 
       <AppText variant="heading">{thread.title ?? 'Request'}</AppText>
 
-      <View style={styles.metaRow}>
-        <AppText variant="caption" tone="soft">
+      <View style={styles.meta}>
+        <AppText variant="caption" tone="faint">
           {author}
         </AppText>
         {thread.place !== null && thread.place.length > 0 && (
-          <>
-            <Dot />
-            <AppText variant="caption" tone="soft" numberOfLines={1} style={styles.flexShrink}>
-              {thread.place}
-            </AppText>
-          </>
+          <AppText variant="caption" tone="faint" numberOfLines={1} style={styles.shrink}>
+            {thread.place}
+          </AppText>
         )}
-        {activity > 0 && (
-          <>
-            <Dot />
-            <AppText variant="caption" tone="soft">
-              {activity} {activity === 1 ? 'response' : 'responses'}
-            </AppText>
-          </>
+        {thread.createdAtMs !== null && (
+          <AppText variant="caption" tone="faint">
+            {elapsed(thread.createdAtMs)}
+          </AppText>
+        )}
+        {replies > 0 && (
+          <AppText variant="caption" tone="faint">
+            {replies} {replies === 1 ? 'reply' : 'replies'}
+          </AppText>
         )}
       </View>
 
@@ -198,12 +212,13 @@ export function ThreadCard({
   );
 }
 
-function Dot() {
-  return (
-    <AppText variant="caption" tone="faint">
-      ·
-    </AppText>
-  );
+function elapsed(createdAtMs: number): string {
+  const minutes = Math.max(0, Math.round((Date.now() - createdAtMs) / 60000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
 }
 
 export function initial(name: string): string {
@@ -211,34 +226,17 @@ export function initial(name: string): string {
 }
 
 const styles = StyleSheet.create({
-  peerRow: { gap: space.lg, paddingVertical: space.xs, paddingRight: space.lg },
-  peer: { alignItems: 'center', gap: space.xs, width: 64 },
-  avatar: {
-    width: 46,
-    height: 46,
-    borderRadius: radius.full,
+  header: { gap: space.sm },
+  actions: { flexDirection: 'row', gap: space.sm },
+  action: { flex: 1, paddingHorizontal: space.sm },
+  topline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  kind: {
     backgroundColor: color.accentSoft,
-    borderWidth: 1,
-    borderColor: color.accentBorder,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'nowrap' },
-  flexShrink: { flexShrink: 1 },
-  fab: {
-    position: 'absolute',
-    right: space.lg,
-    width: 56,
-    height: 56,
     borderRadius: radius.full,
-    backgroundColor: color.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: color.ink,
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
+    paddingHorizontal: space.md,
+    paddingVertical: 4,
   },
+  status: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: space.md, flexWrap: 'wrap' },
+  shrink: { flexShrink: 1 },
 });

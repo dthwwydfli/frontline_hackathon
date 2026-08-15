@@ -15,7 +15,7 @@ import type { Thread } from '../domain/ThreadReducer';
 import { deliveryLabel, type NearbyMeshApi } from '../hooks/useNearbyMesh';
 import { color, space } from '../theme/tokens';
 import { AppText, Button, Card, Divider, Notice, Pill, Screen, TextField } from '../ui/kit';
-import { STATUS_LABEL } from './NearbyScreen';
+import { displayStatus } from './NearbyScreen';
 
 type Entry = {
   key: string;
@@ -105,7 +105,7 @@ export function ThreadDetailScreen({
 
       <Screen bottomInset={space.xl}>
         <Card>
-          <Pill label={STATUS_LABEL[thread.status]} strong={thread.status === 'matched'} />
+          <Pill label={displayStatus(thread)} strong={thread.status === 'matched'} />
           <AppText variant="title">{thread.title ?? 'Request'}</AppText>
           <AppText variant="caption" tone="soft">
             {thread.createdBy === null

@@ -10,6 +10,9 @@ import type { MeshEnvelope } from '../mesh/MeshEnvelope';
 
 export type ThreadStatus = 'open' | 'matched' | 'resolved';
 
+/** What the author meant by posting. Carried in the payload, not the wire type. */
+export type ThreadKind = 'request' | 'offer' | 'update';
+
 export type Reply = {
   messageId: string;
   senderId: string;
@@ -30,6 +33,7 @@ export type Thread = {
   /** Null when replies arrived before the request that created the thread. */
   createdBy: string | null;
   title: string | null;
+  kind: ThreadKind;
   category: string | null;
   place: string | null;
   createdAtMs: number | null;
@@ -45,6 +49,11 @@ export type ThreadState = {
 
 export function emptyState(): ThreadState {
   return { threads: new Map() };
+}
+
+/** Unknown or missing kinds read as a request: the safest default. */
+function readKind(value: unknown): ThreadKind {
+  return value === 'offer' || value === 'update' ? value : 'request';
 }
 
 function stringOrNull(value: unknown): string | null {
@@ -67,6 +76,7 @@ function ensureThread(state: ThreadState, threadId: string): Thread {
       threadId,
       createdBy: null,
       title: null,
+      kind: 'request',
       category: null,
       place: null,
       createdAtMs: null,
@@ -106,6 +116,7 @@ export function applyEnvelope(state: ThreadState, envelope: MeshEnvelope): Threa
       const thread = ensureThread(state, threadId);
       thread.createdBy = envelope.senderId;
       thread.title = stringOrNull(envelope.payload.title);
+      thread.kind = readKind(envelope.payload.kind);
       thread.category = stringOrNull(envelope.payload.category);
       thread.place = stringOrNull(envelope.payload.place);
       thread.createdAtMs = envelope.createdAtMs;

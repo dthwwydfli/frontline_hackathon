@@ -3,47 +3,45 @@ import QRCode from "qrcode";
 import type { MeshStatus } from "@core/Transport/LanRelayMeshTransport";
 
 /**
- * Desktop-side companion panel: install QRs plus who is currently on the mesh.
+ * Desktop-side companion panel: one join QR plus who is currently on the mesh.
  * Never rendered on a phone — the person holding the phone already joined.
  */
-const installTargets = [
-  {
-    id: "android",
-    label: "Android",
-    description: "Scan to install the APK",
-    url: "https://expo.dev/artifacts/eas/ce6Su_9j5U5lcoe7L3TkuYYuG8QLWwIA3f2qLhzYhVg.apk",
-  },
-  {
-    id: "ios",
-    label: "iOS",
-    description: "Open in Expo Go",
-    url: "exp://2373ut0-dthwwydfli-8082.exp.direct",
-  },
-] as const;
+
+const METRO_PORT = 8081;
+
+/**
+ * Where Expo Go should point.
+ *
+ * Derived from whatever host is serving this page, because that is the same
+ * laptop running Metro. A hardcoded URL goes stale the moment the network
+ * changes — which is exactly what happens when you switch to a hotspot before
+ * a demo.
+ *
+ * Override with VITE_JOIN_URL when running Metro somewhere else.
+ */
+function joinUrl(): string {
+  const override = import.meta.env.VITE_JOIN_URL as string | undefined;
+  if (override) return override;
+  return `exp://${window.location.hostname}:${METRO_PORT}`;
+}
 
 export function JoinPanel({ status }: { status: MeshStatus }) {
-  const [qrs, setQrs] = useState<Record<string, string>>({});
+  const [qr, setQr] = useState<string | null>(null);
+  const url = joinUrl();
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all(
-      installTargets.map(async (target) => [
-        target.id,
-        await QRCode.toDataURL(target.url, {
-          margin: 1,
-          width: 320,
-          color: { dark: "#0b1f1d", light: "#ffffff" },
-        }),
-      ]),
-    ).then((entries) => {
-      if (!cancelled) {
-        setQrs(Object.fromEntries(entries));
-      }
+    void QRCode.toDataURL(url, {
+      margin: 1,
+      width: 420,
+      color: { dark: "#0b1c30", light: "#ffffff" },
+    }).then((dataUrl) => {
+      if (!cancelled) setQr(dataUrl);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [url]);
 
   return (
     <aside className="join-panel">
@@ -56,32 +54,20 @@ export function JoinPanel({ status }: { status: MeshStatus }) {
         </p>
       </div>
 
-      <div className="install-grid" aria-label="Install Common Thread">
-        {installTargets.map((target) => (
-          <a
-            className="install-card"
-            href={target.url}
-            key={target.id}
-            rel="noreferrer"
-            target="_blank"
-          >
-            {qrs[target.id] ? (
-              <img
-                src={qrs[target.id]}
-                alt={`QR code for ${target.label} ${target.description}`}
-              />
-            ) : (
-              <span className="qr-placeholder" aria-hidden="true" />
-            )}
-            <span className="install-label">{target.label}</span>
-            <span className="install-description">{target.description}</span>
-          </a>
-        ))}
+      <div className="join-qr" aria-label="Join Common Thread">
+        {qr ? (
+          <img src={qr} alt="QR code to open Common Thread in Expo Go" />
+        ) : (
+          <span className="qr-placeholder" aria-hidden="true" />
+        )}
+        <span className="install-label">Scan to join</span>
+        <span className="install-description">{url}</span>
       </div>
 
       <p className="join-hint">
-        iPhone needs Expo Go and this laptop running the native Expo server.
-        Android installs the APK directly.
+        Join this phone&apos;s hotspot, then scan with the Camera app (iPhone) or
+        Expo Go (Android). Expo Go must already be installed — there is no
+        internet on the hotspot to download it.
       </p>
 
       <div className="join-peers">
@@ -101,8 +87,9 @@ export function JoinPanel({ status }: { status: MeshStatus }) {
       </div>
 
       <p className="join-note">
-        Native builds use the BLE mesh. This screen no longer shares a local
-        browser URL.
+        Messages pass phone to phone over the local mesh. Native builds use
+        Bluetooth LE; this demo uses the local network, because Expo Go cannot
+        load custom native code.
       </p>
     </aside>
   );

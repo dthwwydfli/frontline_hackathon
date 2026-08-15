@@ -1,5 +1,5 @@
 /**
- * Posting a request.
+ * Posting a request, an offer or an update.
  *
  * Content warnings inform, they never block. Someone under stress may have a
  * good reason for what they wrote, and the product does not overrule them —
@@ -10,22 +10,48 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { scanForWarnings } from '../domain/ContentSafety';
+import type { ThreadKind } from '../domain/ThreadReducer';
 import { color, radius, space } from '../theme/tokens';
 import { AppText, Button, Notice, Sheet, TextField } from '../ui/kit';
 
 const CATEGORIES = ['supplies', 'power', 'access', 'check-in', 'general'] as const;
 
+const TITLES: Record<ThreadKind, string> = {
+  request: 'Ask for help',
+  offer: 'Offer help',
+  update: 'Post an update',
+};
+
+const PROMPTS: Record<ThreadKind, string> = {
+  request: 'What do you need?',
+  offer: 'What can you offer?',
+  update: 'What should people know?',
+};
+
+const PLACEHOLDERS: Record<ThreadKind, string> = {
+  request: 'e.g. Drinking water for two people',
+  offer: 'e.g. Spare six-pack of water',
+  update: 'e.g. Water is back on in Block A',
+};
+
 export function Composer({
-  visible,
+  kind,
   onClose,
   onPost,
   canPost,
 }: {
-  visible: boolean;
+  /** Null when closed; the kind being composed when open. */
+  kind: ThreadKind | null;
   onClose: () => void;
-  onPost: (payload: { title: string; category: string; place: string }) => Promise<void>;
+  onPost: (payload: {
+    title: string;
+    kind: ThreadKind;
+    category: string;
+    place: string;
+  }) => Promise<void>;
   canPost: boolean;
 }) {
+  const active: ThreadKind = kind ?? 'request';
   const [title, setTitle] = useState('');
   const [place, setPlace] = useState('');
   const [category, setCategory] = useState<string>('general');
@@ -45,7 +71,7 @@ export function Composer({
 
     setBusy(true);
     try {
-      await onPost({ title: trimmed, category, place: place.trim() });
+      await onPost({ title: trimmed, kind: active, category, place: place.trim() });
       setTitle('');
       setPlace('');
       setCategory('general');
@@ -53,18 +79,18 @@ export function Composer({
     } finally {
       setBusy(false);
     }
-  }, [acknowledged, category, onPost, place, title, warnings.length]);
+  }, [acknowledged, active, category, onPost, place, title, warnings.length]);
 
   return (
-    <Sheet visible={visible} onClose={onClose} title="Ask for help">
+    <Sheet visible={kind !== null} onClose={onClose} title={TITLES[active]}>
       <TextField
-        label="What do you need?"
+        label={PROMPTS[active]}
         value={title}
         onChangeText={(text) => {
           setTitle(text);
           setAcknowledged(false);
         }}
-        placeholder="e.g. Drinking water for two people"
+        placeholder={PLACEHOLDERS[active]}
         maxLength={140}
         multiline
       />
@@ -86,16 +112,16 @@ export function Composer({
         </AppText>
         <View style={styles.chips}>
           {CATEGORIES.map((item) => {
-            const active = item === category;
+            const selected = item === category;
             return (
               <Pressable
                 key={item}
                 accessibilityRole="button"
-                accessibilityState={{ selected: active }}
+                accessibilityState={{ selected }}
                 onPress={() => setCategory(item)}
-                style={[styles.chip, active && styles.chipActive]}
+                style={[styles.chip, selected && styles.chipActive]}
               >
-                <AppText variant="label" tone={active ? 'onAccent' : 'soft'}>
+                <AppText variant="label" tone={selected ? 'onAccent' : 'soft'}>
                   {item}
                 </AppText>
               </Pressable>
